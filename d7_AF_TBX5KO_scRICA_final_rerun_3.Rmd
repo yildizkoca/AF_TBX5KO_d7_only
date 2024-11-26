@@ -1,0 +1,406 @@
+---
+title: "Af_TBX5KO_scRICA"
+output: html_document
+date: "2023-04-27"
+---
+
+```{r}
+
+library("scRICA", lib="~/Desktop/RLibrary2")
+library("Seurat")
+library(ggplot2)
+library(dplyr)
+
+source("~/Desktop/SCRIPTS/scRICA-main/R/getClusterSummaryReplot.R")
+
+source("~/Desktop/projects/pott/scripts/functions/scRNA-seq_integration_functions.R")
+source("~/Desktop/projects/pott/scripts/functions/scRNA-seq_functions.R")
+
+getPalette = colorRampPalette(RColorBrewer::brewer.pal(9, "Set1"))
+
+
+all<-readRDS("~/Desktop/projects/pott/rerun_objects/all_df_refilt2.RDS")
+
+all$genotype<-substr(all$orig.ident,3,4)
+all$day<-substr(all$orig.ident,1,2)
+all$day_gt<-paste(all$day,all$genotype,sep="_")
+
+
+#separately label two main immune cell populations
+all$celltype<-paste0("cl",  all$seurat_clusters)
+all@meta.data[which(all$seurat_clusters==4),  ]$celltype<-"cardiomyocytes"
+all@meta.data[which(all$seurat_clusters==6),  ]$celltype<-"cardiomyocytes"
+all@meta.data[which(all$seurat_clusters==3),  ]$celltype<-"fibroblasts"
+all@meta.data[which(all$seurat_clusters==7),  ]$celltype<-"fibroblasts"
+all@meta.data[which(all$seurat_clusters==8),  ]$celltype<-"fibroblasts"
+all@meta.data[which(all$seurat_clusters==5),  ]$celltype<-"endothelial cells"
+all@meta.data[which(all$seurat_clusters==0),  ]$celltype<-"endocardial cells"
+all@meta.data[which(all$seurat_clusters==2),  ]$celltype<-"endocardial cells"
+all@meta.data[which(all$seurat_clusters==14),  ]$celltype<-"endocardial cells"
+all@meta.data[which(all$seurat_clusters==1),  ]$celltype<-"epicardial cells"
+all@meta.data[which(all$seurat_clusters==12),  ]$celltype<-"smooth muscle cells"
+all@meta.data[which(all$seurat_clusters==9),  ]$celltype<-"immune cells"
+all@meta.data[which(all$seurat_clusters==11),  ]$celltype<-"immune cells"
+all@meta.data[which(all$seurat_clusters==21),  ]$celltype<-"immune cells"
+all@meta.data[which(all$seurat_clusters==16),  ]$celltype<-"endocardial cells"
+
+Idents(all)<-"day"
+d7_from_all<-subset(all, idents="d7")
+Idents(all)<-"seurat_clusters"
+Idents(d7_from_all)<-"seurat_clusters"
+
+
+d7<-readRDS("~/Desktop/projects/pott/AF_TBX5KO_d7_only/d7_integrated_SoupX_db_rm_processed.RDS")
+Idents(d7)<-"seurat_clusters"
+
+d7$genotype<-substr(d7$orig.ident,3,4)
+d7$day<-substr(d7$orig.ident,1,2)
+d7$day_gt<-paste(d7$day,d7$genotype,sep="_")
+
+d7$genotype<-factor(d7$genotype, levels=c("wt","ko"))
+d7$orig.ident<-factor(d7$orig.ident, levels=c("d7wt4","d7wt5","d7wt6","d7wt7","d7wt8","d7wt9","d7wt10","d7ko4","d7ko6","d7ko7", "d7ko8","d7ko9","d7ko10"))
+
+sc_DimPlot_groups(d7, group.by = "seurat_clusters", label=T, name="AF_TBX5KO_d7_only", width=8, height=8)
+sc_DimPlot_groups(d7, group.by = "orig.ident", label=F, name="AF_TBX5KO_d7_only", width=8, height=8)
+sc_DimPlot_groups(d7, group.by = "genotype", label=F, name="AF_TBX5KO_d7_only", width=8, height=8)
+sc_jitterbox_metrics(d7, split.by="seurat_clusters", metrics=c("percent.mt","percent.rb","pANN","nCount_RNA","nFeature_RNA"), name = "AF_TBX5KO_d7_only")
+sc_DimPlot_metrics(d7, metrics=c("percent.mt","precent.rb","pANN"), name = "AF_TBX5KO_d7_only")
+
+cell_number_per_label(d7, idents= c("seurat_clusters"), name="d7_integrated", order=sort(unique(d7$seurat_clusters)))
+cell_number_per_label(d7, idents= c("orig.ident"), name="d7_integrated", order=levels(d7$orig.ident))
+cell_number_per_label(d7, idents= c("genotype"), name="d7_integrated", order=levels(d7$genotype))
+
+sc_integrate_decom_norm(d7, idents = c("seurat_clusters","orig.ident"), name="AF_TBX5KO_d7", write=T)
+
+sc_integrate_cluster_markers(d7, heatmap=T, dotPlot=T, top_n=20, user_features=NULL, name="d7")
+
+
+
+all$cell_id<-paste(substr(rownames(all@meta.data),1,16),all$orig.ident,sep="_")
+d7_from_all$cell_id<-paste(substr(rownames(d7_from_all@meta.data),1,16),d7_from_all$orig.ident,sep="_")
+d7$cell_id<-paste(substr(rownames(d7@meta.data),1,16),d7$orig.ident,sep="_")
+
+summary(d7$cell_id %in% d7_from_all$cell_id) #9906 removed in d7_from_all
+summary(d7_from_all$cell_id %in% d7$cell_id)
+summary(duplicated(d7$cell_id)) #no duplication
+
+#label the cells that are removed in the previous analysis due to high doublet scores in the associated cluster
+d7$remove<-"not removed" 
+d7@meta.data[!d7$cell_id %in% d7_from_all$cell_id,"remove"]<-"removed"
+
+d7@meta.data %>% group_by(seurat_clusters,remove) %>% summarise(n=n())  %>% summarise(prop=n/sum(n)) %>% as.data.frame -> df
+#write.table(df, "doublet_score_removed_clusters_in_the_previous_analysis.txt" ,row.names = T, col.names = T, quote=F, sep="\t")
+
+d7@meta.data %>% group_by(seurat_clusters,remove) %>% summarise(n=n()) %>% as.data.frame -> df
+write.table(df, "doublet_score_removed_clusters_in_the_previous_analysis.txt" ,row.names = T, col.names = T, quote=F, sep="\t")
+
+
+
+
+#user features-cell type markers
+crd<-c("Tnnt2", "Ryr2", "Myh6", "Tbx5")
+atr_crd<-c("Myl7","Sln")
+vent_crd<-c("Myl2","Kcne1")
+san<-c("Hcn4","Tbx3","Shox2","Cacna2d2")
+all_crd<-c(crd,atr_crd,vent_crd,san)
+fb<-c("Dcn", "Col3a1", "Ddr2", "Col1a1", "Postn", "Fap", "Pdgfra", "Serping1", "Timp1", "Col5a1",  "C1ra",  "Dpep1", "Col1a2", "Lum", "Dpt", "Mfap5", "Col14a1", "Mfap4")
+end_crd<-c("Npr3","Vwf", "Hmcn1", "Emcn", "Cdh11","Tmem108", "H19", "Cpe", "Npr3", "Tm4sf1", "Vwf")
+epicrd<-c("Scx","Sema3d","Gata5","Tbx18","Wt1" )
+endoth<-c("Pecam1","Tie1","Icam2", "Ly6a", "Cxcl9", "Ly6c1", "Gbp4", "Fabp4", "Mgll", "Kdr", "Cldn5", "Kitl", "Tcf15")
+smc<-c("Myh11", "Cnn1", "Tagln", "Acta2","Lmod1")
+mp<-c("Csf1r", "Adgre1", "Cd68","C1qa",  "C1qb", "C1qc",  "Pf4", "Fcer1g")
+bcell<-c("Cd19", "Cxcr5", "Ighm", "Ly6d", "Cd74", "Igkc", "Cd79b", "Cd79a", "Cd37", "Ms4a1", "Iglc1", "Cd52")
+nt<-c("Csf3r", "Lrg1", "S100a11","s100a8", "s100a9", "Srgn",  "Tyrobp", "Gm5483","Il1b", "Msrb1", "Stra1", "Cebpb")
+dc<-c("Fcer1g", "Ctss", "Lgals3", "Cebpb",  "Cyba", "Cd52", "Prdx5", "Spi1", "Ctsc", "Lyz2", "Plac8", "Lst1")
+nk<-c("Gzma",  "Nkg7", "Klrd1",  "Ccl5", "Tyrobp", "Ms4a4b", "Cd52", "Gzmb", "Fcer1g", "Tmsb4x")
+tcell<-c("Cd3d", "Cd3e", "Cd8a", "Cd3g", "Trbc2", "Ms4a4b", "Cd52", "Coro1a", "Ptprcap", "Rac2", "Nkg7", "Ptprc", "Arhgdib", "Trac")
+immune<-c(mp,bcell,nt,dc,nk,tcell)
+
+user_features<-list(all_crd,fb,end_crd,epicrd,endoth,smc,mp,nt,dc,tcell,nk,bcell)
+names(user_features)<-c("cardiomyocytes","fibroblasts","endocardial cells","epicardial cells","endothelial cells","smooth muscle cells","macrophages","neutrophils","dendritic cells","T cells","NK cells","B cells")
+
+
+#write user features-cell type markers
+df<-data.frame()
+for (i in 1:length(user_features)) {
+  type<-cbind(names(user_features)[i], user_features[[i]])
+  df<-rbind(df,type)
+}
+colnames(df)<-c("geneType", "gene")
+write.table(df, "cell_markers.txt", quote=F, row.names = F, sep="\t")
+
+
+geneTypeOrder<-c("cardiomyocytes","fibroblasts", "endothelial cells", "endocardial cells","epicardial cells","smooth muscle cells", "macrophages","neutrophils","dendritic cells","T cells","NK cells","B cells")
+
+Idents(d7)<-"seurat_clusters"
+getGoiDotplot(resDir = "~/Desktop/AF_TBX5KO_scRICA_final_d7_filt",
+              rds = d7,
+              newAnnotation = F,
+              newAnnotationRscriptName = NULL,
+              goiFname = "~/Desktop/projects/pott/AF_TBX5KO_d7_only/cell_markers.txt",
+              geneTypeOrder = geneTypeOrder,
+              expCondCheck = "idents",
+              expCond = as.character(sort(unique(d7$seurat_clusters))),
+              expCondReorderLevels = as.character(sort(unique(d7$seurat_clusters))),
+              dotPlotFnamePrefix = "d7_cl",
+              dotPlotWidth = 40,
+              dotPlotHeight = 10,
+              legendPer = 0.12,
+              genetypebarPer = 0.02,
+              fontsize.x = 16,
+              fontsize.y = 22,
+              fontsize.legend1 = 22,
+              fontsize.legend2 = NULL,
+              fontangle.y = 0,
+              gridOn = T,
+              geneTypeLegendOn = T)
+
+
+Idents(all)<-"celltype"
+getGoiDotplot(resDir = "~/Desktop/AF_TBX5KO_scRICA_final",
+              rds = all,
+              newAnnotation = F,
+              newAnnotationRscriptName = NULL,
+              goiFname = "~/Desktop/projects/pott/AF_TBX5_re-rerun/main/cell_markers.txt",
+              geneTypeOrder = geneTypeOrder,
+              expCondCheck = "idents",
+              expCond = order,
+              expCondReorderLevels = rev(order),
+              dotPlotFnamePrefix = "all_df_refilt2_celltype",
+              dotPlotWidth = 40,
+              dotPlotHeight = 10,
+              legendPer = 0.12,
+              genetypebarPer = 0.02,
+              fontsize.x = 16,
+              fontsize.y = 22,
+              fontsize.legend1 = 22,
+              fontsize.legend2 = NULL,
+              fontangle.y = 0,
+              gridOn = T,
+              geneTypeLegendOn = T)
+
+
+
+#annotate cell types using SingleR
+library("celldex",lib="~/Desktop/RLibrary2")
+library("SingleR",lib="~/Desktop/RLibrary2")
+
+#dataset1
+ref<-MouseRNAseqData()
+
+types<-colData(ref)[,"label.main"]
+clusters<-unique(d7$seurat_clusters)
+counts<-GetAssayData(d7, layer="RNA", slot="data")
+
+d7_singleR<-SingleR(test=counts, ref=ref, assay.type.test=1, labels=ref$label.main)
+d7$SingleR<-d7_singleR$pruned.labels
+
+#replace NAs with none
+metadata=ifelse(is.na(d7$SingleR), "none", d7$SingleR)
+d7$SingleR<-metadata
+
+d7@meta.data %>% group_by(seurat_clusters,SingleR) %>% summarise(n()) %>% as.data.frame() -> df
+
+write.table(df, "d7_SingleR_annotation_ref_MouseRNAseqdata.txt" , row.names = T, col.names = T, quote=F, sep="\t")
+
+sc_integrate_decom_norm(d7, idents = c("seurat_clusters","SingleR"), name="AF_TBX5KO_d7_ref_MouseRNAseqdata",write=T)
+
+
+
+#dataset2
+Heart_10X<-readRDS("~/Desktop/projects/moskowitz/Megan10X_wt_mut_rerun/pyscenic/GSE132042_Heart_smartSeq.rds")
+ref<-GetAssayData(Heart_10X, assay = "RNA", slot="data")
+
+gtf<-as.data.frame(fread("~/Desktop/projects/moskowitz/gencode.vM35.all.parsed.gtf.txt"))
+colnames(gtf)<-c("geneID","geneSymbol","type","chrom","chromStart","chromEnd","strand")
+rownames(gtf)<-substr(gtf$geneID,1,18)
+
+summary(rownames(ref) %in% rownames(gtf))
+match<-match(rownames(ref),rownames(gtf))
+rownames(ref)[!is.na(match)]<-gtf[match[!is.na(match)],"geneSymbol"]
+
+types<-Heart_10X@meta.data$cell_type
+clusters<-unique(d7$seurat_clusters)
+counts<-GetAssayData(d7, layer="RNA", slot="data")
+BPPARAM=SnowParam(6, progressbar=TRUE)
+d7_singleR<-SingleR(test=counts, ref=ref, assay.type.test=1, labels=types, BPPARAM=SnowParam(6, progressbar=TRUE), num.threads = bpnworkers(BPPARAM))
+d7$SingleR<-d7_singleR$pruned.labels
+
+
+metadata=ifelse(is.na(d7$SingleR), "none", d7$SingleR)
+d7$SingleR<-metadata
+
+d7@meta.data %>% group_by(seurat_clusters,SingleR) %>% summarise(n()) %>% as.data.frame() -> df
+
+write.table(df, "d7_SingleR_annotation_Heart_10X.txt" , row.names = T, col.names = T, quote=F, sep="\t")
+
+
+sc_integrate_decom_norm(d7, idents = c("seurat_clusters","SingleR"), name="AF_TBX5KO_d7_Heart10X", write=T)
+
+
+#dataset3
+Heart_ss<-readRDS("~/Desktop/projects/moskowitz/Megan10X_wt_mut_rerun/pyscenic/GSE132042_Heart_smartSeq.rds")
+ref<-GetAssayData(Heart_ss, assay = "RNA", slot="data")
+
+gtf<-as.data.frame(fread("~/Desktop/projects/moskowitz/gencode.vM35.all.parsed.gtf.txt"))
+colnames(gtf)<-c("geneID","geneSymbol","type","chrom","chromStart","chromEnd","strand")
+rownames(gtf)<-substr(gtf$geneID,1,18)
+
+summary(rownames(ref) %in% rownames(gtf))
+match<-match(rownames(ref),rownames(gtf))
+rownames(ref)[!is.na(match)]<-gtf[match[!is.na(match)],"geneSymbol"]
+
+types<-Heart_ss@meta.data$cell_type
+clusters<-unique(d7$seurat_clusters)
+counts<-GetAssayData(d7, layer="RNA", slot="data")
+BPPARAM=SnowParam(6, progressbar=TRUE)
+d7_singleR<-SingleR(test=counts, ref=ref, assay.type.test=1, labels=types, BPPARAM=SnowParam(6, progressbar=TRUE), num.threads = bpnworkers(BPPARAM))
+d7$SingleR<-d7_singleR$pruned.labels
+
+metadata=ifelse(is.na(d7$SingleR), "none", d7$SingleR)
+d7$SingleR<-metadata
+
+d7@meta.data %>% group_by(seurat_clusters,SingleR) %>% summarise(n()) %>% as.data.frame() -> df
+
+write.table(df, "d7_SingleR_annotation_Heart_ss.txt" , row.names = T, col.names = T, quote=F, sep="\t")
+
+sc_integrate_decom_norm(d7, idents = c("seurat_clusters","SingleR"), name="AF_TBX5KO_d7_Heart_ss", write=T)
+
+
+
+#remove clusters 6,10,13,14,15,17,18,19 
+Idents(d7)<-"seurat_clusters"
+d7_filt<-subset(d7, idents=c("6","10","14","15","18"), invert=T)
+
+saveRDS(d7_filt, "d7_filt.RDS")
+d7_filt<-readRDS("~/Desktop/projects/pott/AF_TBX5KO_d7_only_final/d7_filt.RDS")
+
+sc_DimPlot_groups(d7_filt, group.by = "seurat_clusters", label=T, name="AF_TBX5KO_d7_only_filtered", width=8, height=8)
+sc_DimPlot_groups(d7_filt, group.by = "seurat_clusters", split.by = "seurat_clusters" , label=T, name="AF_TBX5KO_d7_only_filtered", width= length(unique(d7_filt$seurat_clusters)), height=4, ncol=length(unique(d7_filt$seurat_clusters)))
+sc_DimPlot_groups(d7_filt, group.by="seurat_clusters" ,split.by = "orig.ident", label=F, name="AF_TBX5KO_d7_only_filtered", width=length(unique(d7_filt$orig.ident)), height=4, ncol= 2*length(unique(d7_filt$orig.ident)))
+sc_DimPlot_groups(d7_filt, group.by="seurat_clusters" ,split.by = "genotype", label=F, name="AF_TBX5KO_d7_only_filtered", width=8, height=4, ncol=2)
+sc_DimPlot_groups(d7_filt, group.by = "orig.ident", label=F, name="AF_TBX5KO_d7_only_filtered", width=8, height=8)
+sc_DimPlot_groups(d7_filt, group.by = "genotype", label=F, name="AF_TBX5KO_d7_only_filtered", width=8, height=8)
+
+
+#annotate cell types
+d7_filt$celltype<-paste0("cl",  d7_filt$seurat_clusters)
+d7_filt@meta.data[which(d7_filt$seurat_clusters==0),  ]$celltype<-"epicardial cells"
+d7_filt@meta.data[which(d7_filt$seurat_clusters==1),  ]$celltype<-"endocardial cells"
+d7_filt@meta.data[which(d7_filt$seurat_clusters==2),  ]$celltype<-"endocardial cells"
+d7_filt@meta.data[which(d7_filt$seurat_clusters==3),  ]$celltype<-"fibroblasts"
+d7_filt@meta.data[which(d7_filt$seurat_clusters==4),  ]$celltype<-"leukocytes"
+d7_filt@meta.data[which(d7_filt$seurat_clusters==5),  ]$celltype<-"cardiomyocytes"
+d7_filt@meta.data[which(d7_filt$seurat_clusters==7),  ]$celltype<-"fibroblasts"
+d7_filt@meta.data[which(d7_filt$seurat_clusters==8),  ]$celltype<-"cardiomyocytes"
+d7_filt@meta.data[which(d7_filt$seurat_clusters==9),  ]$celltype<-"endothelial cells"
+d7_filt@meta.data[which(d7_filt$seurat_clusters==11),  ]$celltype<-"endocardial cells"
+d7_filt@meta.data[which(d7_filt$seurat_clusters==12),  ]$celltype<-"smooth muscle cells"
+d7_filt@meta.data[which(d7_filt$seurat_clusters==13),  ]$celltype<-"leukocytes"
+d7_filt@meta.data[which(d7_filt$seurat_clusters==16),  ]$celltype<-"leukocytes"
+d7_filt@meta.data[which(d7_filt$seurat_clusters==17),  ]$celltype<-"endothelial cells II"
+d7_filt@meta.data[which(d7_filt$seurat_clusters==19),  ]$celltype<-"neurons"
+
+
+order=c("cardiomyocytes","fibroblasts","endothelial cells","endothelial cells II","endocardial cells","epicardial cells","smooth muscle cells","leukocytes","neurons")
+d7_filt$celltype<-factor(d7_filt$celltype, levels=order)
+
+saveRDS(d7_filt, "d7_filt_annotated.RDS")
+d7_filt<-readRDS("~/Desktop/projects/pott/AF_TBX5KO_d7_only_final_final/d7_filt_annotated.RDS")
+
+sc_DimPlot_groups(d7_filt, group.by = "celltype", label=F, name="AF_TBX5KO_d7_only_filtered", width=12, height=8)
+sc_DimPlot_groups(d7_filt, group.by = "celltype", split.by = "celltype" , label=F, name="AF_TBX5KO_d7_only_filtered", width= 3*length(unique(d7_filt$celltype)), height=4, ncol=length(unique(d7_filt$celltype)))
+
+#find cluster markers
+sc_integrate_cluster_markers(d7_filt, heatmap=T, dotPlot=T, top_n=20, user_features=NULL, name="d7_df_refilt2")
+
+DefaultAssay(d7_filt)<-"integrated"
+Idents(d7_filt)<-"celltype"
+#sc_integrate_cluster_markers(d7, heatmap=T, dotPlot=T, top_n=10, user_features=NULL, name="d7")
+sc_integrate_cluster_markers(d7_filt, heatmap=T, dotPlot=T, top_n=5, user_features=NULL, name="d7_filt")
+
+
+cell_number_per_label(d7_filt, idents= c("seurat_clusters"), name="d7_refilt2_integrated", order=sort(unique(d7_filt$seurat_clusters)))
+cell_number_per_label(d7_filt, idents= c("orig.ident"), name="d7_refilt2_integrated",order=sort(unique(d7_filt$orig.ident)))
+cell_number_per_label(d7_filt, idents= c("genotype"), name="d7_refilt2_integrated",order=sort(unique(d7_filt$genotype)))
+
+cell_number_per_label(d7_filt, idents= c("celltype"), name="d7_refilt2_integrated", order=order)
+sc_integrate_decom_norm(d7_filt, idents = c("seurat_clusters","orig.ident","genotype","celltype"), name="AF_TBX5KO_d7_refilt", write=T)
+
+
+Idents(all)<-"celltype"
+getGoiDotplot(resDir = "~/Desktop/AF_TBX5KO_scRICA_final",
+              rds = d7_filt,
+              newAnnotation = F,
+              newAnnotationRscriptName = NULL,
+              goiFname = "~/Desktop/projects/pott/AF_TBX5_re-rerun/main/cell_markers.txt",
+              geneTypeOrder = geneTypeOrder,
+              expCondCheck = "idents",
+              expCond = order,
+              expCondReorderLevels = rev(order),
+              dotPlotFnamePrefix = "all_df_refilt2_celltype",
+              dotPlotWidth = 40,
+              dotPlotHeight = 10,
+              legendPer = 0.12,
+              genetypebarPer = 0.02,
+              fontsize.x = 16,
+              fontsize.y = 22,
+              fontsize.legend1 = 22,
+              fontsize.legend2 = NULL,
+              fontangle.y = 0,
+              gridOn = T,
+              geneTypeLegendOn = T)
+
+
+#d7 proportion test by cluster
+df<-sc_integrate_decom_norm(d7_filt, name="d7_refilt2_integrated", idents = c("orig.ident","seurat_clusters"), write=F)
+df[[1]]$genotype<-substr(df[[1]][,"orig.ident"], 3,4)
+df[[1]]$daygt<-substr(df[[1]][,"orig.ident"], 1,4)
+sc_proportion_test(df[[1]], name="d7_refilt2_cluster")
+
+#d7 proportion test by celltype
+df<-sc_integrate_decom_norm(d7_filt, name="d7_refilt2_integrated", idents = c("orig.ident","celltype"), write=F)
+df[[1]]$genotype<-substr(df[[1]][,"orig.ident"], 3,4)
+df[[1]]$daygt<-substr(df[[1]][,"orig.ident"], 1,4)
+sc_proportion_test(df[[1]], name="d7_refilt2_celltype", ident2 = "celltype")
+
+
+#d7, proportion test by cluster, plots
+df<-sc_integrate_decom_norm(d7_filt, name="d7", idents = c("orig.ident","seurat_clusters"), write=F)
+df[[1]]$genotype<-substr(df[[1]][,"orig.ident"], 3,4)
+df[[1]]$daygt<-substr(df[[1]][,"orig.ident"], 1,4)
+df[[1]]$genotype<-factor(df[[1]]$genotype, levels=c("wt","ko"))
+clusters<-sort(unique(d7_filt$seurat_clusters))
+
+g<-ggplot(df[[1]], aes(x=genotype, y=prop, color=genotype)) + geom_boxplot() + geom_jitter(width=0.1, size=0.5) + facet_wrap(~seurat_clusters, ncol=15) + theme_classic() + theme(axis.text.x = element_blank())
+ggsave("d7_refilt_proportion_test_per_cluster.pdf", g, width=10, height=2)
+
+
+
+#d7, proportion test by celltype, plots
+df<-sc_integrate_decom_norm(d7_filt, name="d7", idents = c("orig.ident","celltype"), write=F)
+df[[1]]$genotype<-substr(df[[1]][,"orig.ident"], 3,4)
+df[[1]]$daygt<-substr(df[[1]][,"orig.ident"], 1,4)
+df[[1]]$genotype<-factor(df[[1]]$genotype, levels=c("wt","ko"))
+celltypes<-sort(unique(d7_filt$celltype))
+
+df[[1]] <- df[[1]] %>% mutate(celltype = str_wrap(celltype, width = 10))
+df[[1]]$celltype<-factor(df[[1]]$celltype, levels=unique(df[[1]]$celltype))
+
+g<-ggplot(df[[1]], aes(x=genotype, y=prop, color=genotype)) + geom_boxplot() + geom_jitter(width=0.1, size=0.5) + facet_wrap(~celltype, ncol=15) + theme_classic() + theme(axis.text.x = element_blank(), strip.text = element_text(size = 8) )
+ggsave("d7_refilt_proportion_test_per_celltype.pdf", g, width=10, height=2)
+
+
+
+sc_VlnPlot(d7_filt, features = c("Klf15","Sox9"), assay="RNA", group.by = "celltype", split.by = "genotype", name="d7_filt")
+
+sc_FeaturePlot(d7_filt, features = c("Klf15","Sox9"), assay="RNA", split.by = "genotype", name="d7_filt")
+
+
+
+
+
+
+                
+```
+
