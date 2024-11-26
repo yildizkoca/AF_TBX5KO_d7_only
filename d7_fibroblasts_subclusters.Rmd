@@ -1,0 +1,68 @@
+---
+title: "fibroblasts_subclusters_rerun.Rmd"
+output: html_document
+date: "2023-10-24"
+---
+
+```{r}
+
+library("scRICA", lib="~/Desktop/RLibrary2")
+library("Seurat")
+library(ggplot2)
+library(dplyr)
+
+source("~/Desktop/SCRIPTS/scRICA-main/R/getClusterSummaryReplot.R")
+
+source("~/Desktop/projects/pott/scripts/functions/scRNA-seq_integration_functions.R")
+source("~/Desktop/projects/pott/scripts/functions/scRNA-seq_functions.R")
+
+getPalette = colorRampPalette(RColorBrewer::brewer.pal(9, "Set1"))
+
+#cardiomyocyte subclusters
+d7<-readRDS("~/Desktop/projects/pott/AF_TBX5KO_d7_only/AF_TBX5KO_d7_integrated_annotated.RDS")
+
+DefaultAssay(d7)<-"RNA"
+Idents(d7)<-"celltype"
+d7_fbs<-subset(d7, idents ="fibroblasts")
+
+d7_fbs_split<-SplitObject(d7_fbs, split.by="orig.ident")
+fbs_reint<-sc_integrate(d7_fbs_split, reduction="cca")
+
+saveRDS(fbs_reint, "d7_fbs_reintegrated.RDS")
+fbs_reint<-readRDS("~/Desktop/projects/pott/AF_TBX5KO_d7_only/d7_fbs_reintegrated.RDS")
+
+#cluster at resolution 0.25
+fbs_reint<-sc_integrate_PCA(fbs_reint, plot=TRUE, name="d7_fbs_reintegrated")
+fbs_reint05<-sc_integrate_cluster(fbs_reint, dims=1:20, resolution = 0.5, name="all_fb_reint05", plot=TRUE)
+fbs_reint025<-sc_integrate_cluster(fbs_reint, dims=1:20, resolution = 0.25, name="all_fb_reint025", plot=TRUE)
+fbs_reint01<-sc_integrate_cluster(fbs_reint, dims=1:20, resolution = 0.1, name="all_fb_reint01", plot=TRUE)
+fbs_reint005<-sc_integrate_cluster(fbs_reint, dims=1:20, resolution = 0.05, name="all_fb_reint005", plot=TRUE)
+
+fbs_reint005$genotype<-factor(fbs_reint005$genotype, levels=c("wt","ko"))
+fbs_reint005$orig.ident<-factor(fbs_reint005$orig.ident, levels=c("d7wt4","d7wt5","d7wt6","d7wt7","d7wt8","d7wt9","d7wt10","d7ko4","d7ko6","d7ko7", "d7ko8","d7ko9","d7ko10"))
+
+saveRDS(fbs_reint005, "d7_fbs_reintegrated.RDS")
+
+sc_DimPlot_groups(fbs_reint005, group.by = "seurat_clusters", name="d7_fbs_reint005", width = 8, height=8)
+sc_DimPlot_groups(fbs_reint005, group.by = "seurat_clusters", split.by = "seurat_clusters", name="d7_fbs_reint005", ncol=8, width = 12, height=4)
+sc_DimPlot_groups(fbs_reint005, group.by = "orig.ident", name="d7_fbs_reint005", width = 8, height=8)
+sc_DimPlot_groups(fbs_reint005, group.by = "genotype", name="d7_fbs_reint005", width = 8, height=8)
+
+
+
+cell_number_per_label(fbs_reint005, idents= c("seurat_clusters"), name="d7_fbs_reint005", order=sort(unique(fbs_reint005$seurat_clusters)))
+cell_number_per_label(fbs_reint005, idents= c("orig.ident"), name="d7_fbs_reint005", order=levels(fbs_reint005$orig.ident))
+cell_number_per_label(fbs_reint005, idents= c("genotype"), name="d7_fbs_reint005", order=levels(fbs_reint005$genotype))
+
+sc_integrate_decom_norm(fbs_reint005, idents=c("seurat_clusters","orig.ident","genotype","day"), name="d7_fbs_reint005", write=T)
+
+sc_FeaturePlot(fbs_reint005, features = c("Klf15","Sox9"), assay="RNA", split.by = "genotype", name="d7_fbs")
+
+
+
+
+
+
+
+
+```
