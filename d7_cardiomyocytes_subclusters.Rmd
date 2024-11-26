@@ -1,0 +1,65 @@
+---
+title: "cardiomyocytes_subclusters_rerun.Rmd"
+output: html_document
+date: "2023-10-24"
+---
+
+```{r}
+
+library("scRICA", lib="~/Desktop/RLibrary2")
+library("Seurat")
+library(ggplot2)
+library(dplyr)
+
+source("~/Desktop/SCRIPTS/scRICA-main/R/getClusterSummaryReplot.R")
+
+source("~/Desktop/projects/pott/scripts/functions/scRNA-seq_integration_functions.R")
+source("~/Desktop/projects/pott/scripts/functions/scRNA-seq_functions.R")
+
+getPalette = colorRampPalette(RColorBrewer::brewer.pal(9, "Set1"))
+
+#cardiomyocyte subclusters
+d7<-readRDS("~/Desktop/projects/pott/AF_TBX5KO_d7_only/AF_TBX5KO_d7_integrated_annotated.RDS")
+
+DefaultAssay(d7)<-"RNA"
+Idents(d7)<-"celltype"
+d7_crds<-subset(d7, idents ="cardiomyocytes")
+
+d7_crds_split<-SplitObject(d7_crds, split.by="orig.ident")
+crds_reint<-sc_integrate(d7_crds_split, reduction="cca")
+
+saveRDS(crds_reint, "d7_crds_reintegrated.RDS")
+crds_reint<-readRDS("~/Desktop/projects/pott/AF_TBX5KO_d7_only/d7_crds_reintegrated.RDS")
+
+#cluster at resolution 0.25
+crds_reint<-sc_integrate_PCA(crds_reint, plot=TRUE, name="d7_crds_reintegrated")
+crds_reint05<-sc_integrate_cluster(crds_reint, dims=1:20, resolution = 0.5, name="d7_crd_reint05", plot=TRUE)
+crds_reint025<-sc_integrate_cluster(crds_reint, dims=1:20, resolution = 0.25, name="d7_crd_reint025", plot=TRUE)
+crds_reint01<-sc_integrate_cluster(crds_reint, dims=1:20, resolution = 0.1, name="d7_crd_reint01", plot=TRUE)
+
+crds_reint01$genotype<-factor(crds_reint01$genotype, levels=c("wt","ko"))
+crds_reint01$orig.ident<-factor(crds_reint01$orig.ident, levels=c("d7wt4","d7wt5","d7wt6","d7wt7","d7wt8","d7wt9","d7wt10","d7ko4","d7ko6","d7ko7", "d7ko8","d7ko9","d7ko10"))
+
+saveRDS(crds_reint01, "d7_crds_reintegrated.RDS")
+
+sc_DimPlot_groups(crds_reint01, group.by = "seurat_clusters", name="d7_crds_reint01", width = 8, height=8)
+sc_DimPlot_groups(crds_reint01, group.by = "seurat_clusters", split.by = "seurat_clusters", name="d7_crds_reint01", ncol=8, width = 12, height=4)
+sc_DimPlot_groups(crds_reint01, group.by = "orig.ident", name="d7_crds_reint01", width = 8, height=8)
+sc_DimPlot_groups(crds_reint01, group.by = "genotype", name="d7_crds_reint01", width = 8, height=8)
+
+
+cell_number_per_label(crds_reint01, idents= c("seurat_clusters"), name="d7_crds_reint01", order=sort(unique(crds_reint01$seurat_clusters)))
+cell_number_per_label(crds_reint01, idents= c("orig.ident"), name="d7_crds_reint01", order=levels(crds_reint01$orig.ident))
+cell_number_per_label(crds_reint01, idents= c("genotype"), name="d7_crds_reint01", order=levels(crds_reint01$genotype))
+
+sc_integrate_decom_norm(crds_reint01, idents=c("seurat_clusters","orig.ident","genotype","day"), name="d7_crds_reint01", write=T)
+
+sc_FeaturePlot(crds_reint01, features = c("Klf15","Sox9"), assay="RNA", split.by = "genotype", name="d7_crds")
+
+
+
+
+
+
+
+```
