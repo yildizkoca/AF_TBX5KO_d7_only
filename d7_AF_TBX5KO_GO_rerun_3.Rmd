@@ -1,0 +1,295 @@
+---
+title: "AFTBX5KO_GO.Rmd"
+output: html_document
+date: "2023-05-23"
+---
+
+```{r}
+
+library(clusterProfiler,  lib="~/Desktop/RLibrary2")
+library(org.Mm.eg.db, lib="~/Desktop/RLibrary2")
+
+#read the dream DGE objects
+#read the dream DGE objects
+setwd("~/Desktop/projects/pott/AF_TBX5KO_d7_only_final_final/d7_dream/objects")
+d7_dge<-readRDS("d7_final_refilt_DEGs_pseudobulk_unified_dream_modelbygenotype_p1.RDS")
+d7_dge_cl<-readRDS("d7_final_refilt_DEGs_pseudobulk_cluster_dream_modelbygenotype_p1.RDS")
+d7_dge_ct<-readRDS("d7_final_refilt_DEGs_pseudobulk_celltype_dream_modelbygenotype_p1.RDS")
+
+list2<-list(d7_dge,d7_dge_cl,d7_dge_ct)
+names(list2)<-c("d7_dge","d7_dge_cl","d7_dge_ct")
+
+setwd("~/Desktop/projects/pott/AF_TBX5KO_d7_only_final_final/d7_dream/objects")
+d7_dge<-readRDS("d7_final_refilt_DEGs_pseudobulk_unified_dream_modelbygenotype_p005.RDS")
+d7_dge_cl<-readRDS("d7_final_refilt_DEGs_pseudobulk_cluster_dream_modelbygenotype_p005.RDS")
+d7_dge_ct<-readRDS("d7_final_refilt_DEGs_pseudobulk_celltype_dream_modelbygenotype_p005.RDS")
+
+list<-list(d7_dge,d7_dge_cl,d7_dge_ct)
+names(list)<-c("d7_dge","d7_dge_cl","d7_dge_ct")
+
+#GO term enrichment analysis
+setwd("~/Desktop/projects/pott/AF_TBX5KO_d7_only_final_final/d7_dream/GO_analysis_no_background_correction")
+onts<-c("CC","BP","MF")
+up<-list()
+down<-list()
+dir1<-getwd()
+for (i in 1:length(list)) {
+  dir.create(names(list)[i])
+  setwd(names(list)[i])
+  up[[i]]<-list()
+  down[[i]]<-list()
+  for (j in 1:length(list[[i]])) {
+    obj<-list[[i]][[j]]
+   if (length(obj) > 0 ) {
+      up[[i]][[j]]<-obj[obj[,  "logFC"] > 0,  ]
+      down[[i]][[j]]<-obj[obj[,  "logFC"] < 0,  ]
+      names(up[[i]])[j]<-names(list[[i]])[j]
+      names(down[[i]])[j]<-names(list[[i]])[j]
+     if (nrow(up[[i]][[j]]) > 1 ) {
+       print(paste(names(up[[i]])[j],"nrow up > 0", sep=" "))
+       for ( ont in onts) {
+        ego_up <- enrichGO(gene = rownames(up[[i]][[j]]),  
+                  OrgDb         = org.Mm.eg.db,  
+                  #universe      = allgenestested,
+                  ont           = ont,  
+                  pAdjustMethod = "fdr",  
+                  pvalueCutoff  = 0.01,  
+                  qvalueCutoff  = 0.05,  
+                  keyType       = "SYMBOL")
+       if(!is.null(ego_up)) {
+         if (nrow(summary(ego_up)) > 0 ) {
+            print(paste(names(up[[i]])[j],"nrow ego_up > 0"))
+            filename<-paste(names(list)[i], gsub("/","_",names(list[[i]])[j]),  "GO", ont ,"up.txt",  sep="_")
+            write.table(summary(ego_up), filename, col.names = T, quote=F, sep="\t")
+            filename<-paste(names(list)[i],  gsub("/","_",names(list[[i]])[j]),  "GO", ont ,"up.pdf",  sep="_")
+            pdf(filename,   width=8,  height=8)
+            print(dotplot(ego_up,   showCategory=20))
+            dev.off()
+          }
+        }
+       }
+     }
+     if (nrow(down[[i]][[j]]) > 1 ) {
+        print(paste(names(up[[i]])[j],"nrow down > 0"))
+        for ( ont in onts) {
+          ego_down <- enrichGO(gene = rownames(down[[i]][[j]]),  
+                    OrgDb         = org.Mm.eg.db,  
+                    #universe      = allgenestested,
+                    ont           = ont,  
+                    pAdjustMethod = "fdr",  
+                    pvalueCutoff  = 0.01,  
+                    qvalueCutoff  = 0.05,  
+                    keyType       = "SYMBOL") 
+         if(!is.null(ego_down)) {
+           if (nrow(summary(ego_down)) > 0 ) {
+             print(paste(names(up[[i]])[j],"nrow ego_down > 0"))
+              filename<-paste(names(list)[i],  gsub("/","_",names(list[[i]])[j]),  "GO", ont ,"down.txt",  sep="_")
+              write.table(summary(ego_down), filename, col.names = T, quote=F, sep="\t")
+              filename<-paste(names(list)[i],  gsub("/","_",names(list[[i]])[j]),  "GO", ont, "down.pdf",  sep="_")
+              pdf(filename,   width=8,   height=8)
+              print(dotplot(ego_down,   showCategory=20))
+              dev.off()
+            }
+          }
+        }
+      }
+    }
+  }
+  setwd(dir1)
+}
+
+
+#GO term enrichment analysis with background correction
+setwd("~/Desktop/projects/pott/AF_TBX5KO_d7_only_final_final/d7_dream/GO_analysis_background_corrected")
+onts<-c("CC","BP","MF")
+up<-list()
+down<-list()
+dir1<-getwd()
+for (i in 1:length(list)) {
+  dir.create(names(list)[i])
+  setwd(names(list)[i])
+  up[[i]]<-list()
+  down[[i]]<-list()
+  for (j in 1:length(list[[i]])) {
+    obj<-list[[i]][[j]]
+   if (length(obj) > 0 ) {
+      up[[i]][[j]]<-obj[obj[,  "logFC"] > 0,  ]
+      down[[i]][[j]]<-obj[obj[,  "logFC"] < 0,  ]
+      names(up[[i]])[j]<-names(list[[i]])[j]
+      names(down[[i]])[j]<-names(list[[i]])[j]
+      allgenestested<-rownames(list2[[i]][[j]])
+      if (nrow(up[[i]][[j]]) > 1 ) {
+       print(paste(names(up[[i]])[j],"nrow up > 0", sep=" "))
+       for ( ont in onts) {
+        ego_up <- enrichGO(gene = rownames(up[[i]][[j]]),  
+                  OrgDb         = org.Mm.eg.db,  
+                  universe      = allgenestested,
+                  ont           = ont,  
+                  pAdjustMethod = "fdr",  
+                  pvalueCutoff  = 0.01,  
+                  qvalueCutoff  = 0.05,  
+                  keyType       = "SYMBOL")
+       if(!is.null(ego_up)) {
+         if (nrow(summary(ego_up)) > 0 ) {
+            print(paste(names(up[[i]])[j],"nrow ego_up > 0"))
+            filename<-paste(names(list)[i],  gsub("/","_",names(list[[i]])[j]),  "GO", ont ,"up.txt",  sep="_")
+            write.table(summary(ego_up), filename, col.names = T, quote=F, sep="\t")
+            filename<-paste(names(list)[i],  gsub("/","_",names(list[[i]])[j]),  "GO", ont ,"up.pdf",  sep="_")
+            pdf(filename,   width=8,  height=8)
+            print(dotplot(ego_up,   showCategory=20))
+            dev.off()
+          }
+        }
+       }
+     }
+     if (nrow(down[[i]][[j]]) > 1 ) {
+        print(paste(names(up[[i]])[j],"nrow down > 0"))
+        for ( ont in onts) {
+          ego_down <- enrichGO(gene = rownames(down[[i]][[j]]),  
+                    OrgDb         = org.Mm.eg.db,  
+                    universe      = allgenestested,
+                    ont           = ont,  
+                    pAdjustMethod = "fdr",  
+                    pvalueCutoff  = 0.01,  
+                    qvalueCutoff  = 0.05,  
+                    keyType       = "SYMBOL") 
+         if(!is.null(ego_down)) {
+           if (nrow(summary(ego_down)) > 0 ) {
+             print(paste(names(up[[i]])[j],"nrow ego_down > 0"))
+              filename<-paste(names(list)[i],  gsub("/","_",names(list[[i]])[j]),  "GO", ont ,"down.txt",  sep="_")
+              write.table(summary(ego_down), filename, col.names = T, quote=F, sep="\t")
+              filename<-paste(names(list)[i],  gsub("/","_",names(list[[i]])[j]),  "GO", ont, "down.pdf",  sep="_")
+              pdf(filename,   width=8,   height=8)
+              print(dotplot(ego_down,   showCategory=20))
+              dev.off()
+            }
+          }
+        }
+      }
+    }
+  }
+  setwd(dir1)
+}
+
+
+
+#GO term enrichment analysis up and down combined, without background correction
+setwd("~/Desktop/projects/pott/AF_TBX5KO_d7_only_final_final/d7_dream/combined_GO_analysis_no_background_correction")
+onts<-c("CC","BP","MF")
+
+dir1<-getwd()
+for (i in 1:length(list)) {
+  dir.create(names(list)[i])
+  setwd(names(list)[i])
+  for (j in 1:length(list[[i]])) {
+    obj<-list[[i]][[j]]
+     if (nrow(obj) > 1 ) {
+       print(paste(names(list[[i]])[j],"nrow obj > 0", sep=" "))
+       for ( ont in onts) {
+        ego <- enrichGO(gene = rownames(obj),  
+                  OrgDb         = org.Mm.eg.db,  
+                  #universe      = allgenestested,
+                  ont           = ont,  
+                  pAdjustMethod = "fdr",  
+                  pvalueCutoff  = 0.01,  
+                  qvalueCutoff  = 0.05,  
+                  keyType       = "SYMBOL")
+       if(!is.null(ego)) {
+         if (nrow(summary(ego)) > 0 ) {
+            print(paste(names(list[[i]])[j],"nrow ego > 0"))
+            filename<-paste(names(list)[i], gsub("/","_",names(list[[i]])[j]),  "GO", ont ,"up_and_down_combined.txt",  sep="_")
+            write.table(summary(ego), filename, col.names = T, quote=F, sep="\t")
+            filename<-paste(names(list)[i],  gsub("/","_",names(list[[i]])[j]),  "GO", ont ,"up_and_down_combined.pdf",  sep="_")
+            pdf(filename,   width=6,  height=6)
+            print(dotplot(ego,   showCategory=10))
+            dev.off()
+          }
+        }
+       }
+     }
+  }
+  setwd(dir1)
+}
+
+
+
+#GO term enrichment analysis up and down combined, with background correction
+setwd("~/Desktop/projects/pott/AF_TBX5KO_d7_only_final_final/d7_dream/combined_GO_analysis_background_correction")
+onts<-c("CC","BP","MF")
+
+dir1<-getwd()
+for (i in 1:length(list)) {
+  dir.create(names(list)[i])
+  setwd(names(list)[i])
+  for (j in 1:length(list[[i]])) {
+    obj<-list[[i]][[j]]
+    allgenestested<-rownames(list2[[i]][[j]])
+     if (nrow(obj) > 1 ) {
+       print(paste(names(list[[i]])[j],"nrow obj > 0", sep=" "))
+       for ( ont in onts) {
+        ego <- enrichGO(gene = rownames(obj),  
+                  OrgDb         = org.Mm.eg.db,  
+                  universe      = allgenestested,
+                  ont           = ont,  
+                  pAdjustMethod = "fdr",  
+                  pvalueCutoff  = 0.01,  
+                  qvalueCutoff  = 0.05,  
+                  keyType       = "SYMBOL")
+       if(!is.null(ego)) {
+         if (nrow(summary(ego)) > 0 ) {
+            print(paste(names(list[[i]])[j],"nrow ego > 0"))
+            filename<-paste(names(list)[i], gsub("/","_",names(list[[i]])[j]),  "GO", ont ,"up_and_down_combined.txt",  sep="_")
+            write.table(summary(ego), filename, col.names = T, quote=F, sep="\t")
+            filename<-paste(names(list)[i],  gsub("/","_",names(list[[i]])[j]),  "GO", ont ,"up_and_down_combined.pdf",  sep="_")
+            pdf(filename,   width=6,  height=6)
+            print(dotplot(ego,   showCategory=10))
+            dev.off()
+          }
+        }
+       }
+     }
+  }
+  setwd(dir1)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+list[[1]]<-read.table("all_dge_cl_0_down_.txt", header=F)
+list[[1]]<-apply(list[[1]],2,as.character)
+list[[2]]<-read.table("all_dge_cl_10_down_.txt", header=F)
+list[[2]]<-apply(list[[2]],2,as.character)
+list[[3]]<-read.table("all_dge_cl_11_down_.txt", header=F)
+list[[3]]<-apply(list[[3]],2,as.character)
+
+
+entrezids<-list()
+for (i in 1:length(list)) {
+  anno<-AnnotationDbi::select(org.Mm.eg.db, keys=list[[i]], columns="ENTREZID", keytype="SYMBOL")
+  match<-match(list[[i]], anno[,"SYMBOL"])
+  entrezids[[i]]<-anno[match,"ENTREZID"]
+  entrezids[[i]]<-entrezids[[i]][!is.na(entrezids[[i]])]
+}
+names(entrezids)<-c("1","2","3")
+
+
+
+CompareGO_BP=compareCluster(entrezids, fun="enrichKEGG", pvalueCutoff=0.01, pAdjustMethod="BH", OrgDb=org.Mm.eg.db,ont="BP",readable=T)
+dotplot(CompareGO_BP, showCategory=10, title=“GO - Biological Process”)
+
+CompareGO_BP<-compareCluster(entrezids, fun="enrichKEGG", pvalueCutoff=0.01, pAdjustMethod="BH")
+
+
+```
