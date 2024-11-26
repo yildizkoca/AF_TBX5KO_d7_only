@@ -1,0 +1,359 @@
+---
+title: "AF_TBX5KO_DF_dream_rerun"
+output: html_document
+date: "2023-10-05"
+---
+
+```{r}
+
+
+library(edgeR, lib="~/Desktop/RLibrary2")
+library(BiocParallel, lib="~/Desktop/RLibrary2")
+library(variancePartition, lib="~/Desktop/RLibrary2")
+library(Seurat, lib="~/Desktop/RLibrary2")
+library(ggplot2, lib="~/Desktop/RLibrary2")
+library(tidyverse, lib="~/Desktop/RLibrary2")
+
+source("~/Desktop/projects/pott/scripts/functions/scRNA-seq_functions.R")
+source("~/Desktop/projects/pott/scripts/functions/scRNA-seq_integration_functions.R")
+
+source("~/Desktop/projects/pott/scripts/DE_for_Seb.R")
+
+d7<-readRDS("~/Desktop/projects/pott/AF_TBX5KO_d7_only_final_final/d7_filt_annotated.RDS")
+
+exp<-d7_de[[1]][[2]]$E[c("Klf15","Sox9"),]
+crd_exp<-d7_de_ct[["cardiomyocytes"]][[2]]$E[c("Klf15"),]
+fb_exp<-d7_de_ct[["fibroblasts"]][[2]]$E[c("Klf15","Sox9"),]
+exp_mt<-t(exp) %>% as.data.frame %>% mutate ("genotype"=substr(colnames(exp),3,4))
+crd_exp_mt<-crd_exp %>% as.data.frame %>% mutate ("genotype"=substr(colnames(exp),3,4))
+fb_exp_mt<-t(fb_exp) %>% as.data.frame %>% mutate ("genotype"=substr(colnames(fb_exp),3,4))
+
+list<-list(exp_mt,crd_exp_mt,fb_exp_mt)
+names(list)<-c("all_pesudobulk","crd_pesudobulk","fb_pseudobulk")
+
+for(i in 1:length(list)) {
+  list[[i]]$genotype<-factor(list[[i]]$genotype, levels=c("wt","ko"))
+  list[[i]]<-list[[i]] %>% gather(Key, Value, -genotype)
+  g<-ggplot(list[[i]], aes(y=Value, x=genotype, fill=genotype)) + geom_jitter(width=0.1) + geom_violin(alpha=0.75) + theme_classic() + facet_wrap(~Key) + labs(y="log2(cpm+1)", x="") + scale_fill_manual(values=getPalette(2))
+  ggsave(paste0(names(list)[i], "_Klf15_Sox9_violin_plots.pdf"), width=8, height=4)
+}
+
+g<-ggplot(list[[2]], aes(y=Value, x=genotype, fill=genotype)) + geom_jitter(width=0.1) + geom_violin(alpha=0.75) + theme_classic() + labs(y="log2(cpm+1)", x="") + scale_fill_manual(values=getPalette(2))
+ggsave(paste0(names(list)[2], "_Klf15_Sox9_violin_plots.pdf"), width=4, height=4)
+
+
+
+
+
+
+
+
+
+
+DefaultAssay(d7)<-"RNA"
+
+#PSEUDOBULK DGE ANALYSIS
+#day 7
+#generate pseudobulk counts matrix
+d7_pb<-AggregateExpression(d7, group.by = c("orig.ident"), assays = "RNA", slot = "counts")
+d7_pb_counts<-d7_pb$RNA
+
+saveRDS(d7_pb_counts, "d7_final_refilt_pseudobulk_counts.RDS")
+
+d7_pb_cl<-AggregateExpression(d7, group.by = c("seurat_clusters","orig.ident"), assays = "RNA", slot = "counts")
+d7_pb_cl_counts<-d7_pb_cl$RNA
+
+saveRDS(d7_pb_cl_counts, "d7_final_refilt_pseudobulk_counts_by_cluster.RDS")
+
+d7_pb_ct<-AggregateExpression(d7, group.by = c("celltype","orig.ident"), assays = "RNA", slot = "counts")
+d7_pb_ct_counts<-d7_pb_ct$RNA
+
+saveRDS(d7_pb_ct_counts, "d7_final_refilt_pseudobulk_counts_by_celltype.RDS")
+
+
+d7_pb<-readRDS("d7_final_refilt_pseudobulk_counts.RDS")
+d7_pb_cl<-readRDS("d7_final_refilt_pseudobulk_counts_by_cluster.RDS")
+d7_pb_ct<-readRDS("d7_final_refilt_pseudobulk_counts_by_celltype.RDS")
+
+
+ggplot(data, aes(y=Klf15, x=genotype)) + geom_boxplot() + facet_wrap(~celltype)
+ggplot(d7@meta.data, aes(y=Sox9, x=genotype)) + geom_boxplot()
+
+
+
+d7$unified<-"unified"
+
+#DGE analysis 
+param = SnowParam(10, "SOCK", progressbar=TRUE)
+register(param) 
+model_formula= ~genotype
+d7_de<-de_genes(d7, classification = "unified", model_formula = model_formula, maineffect = "genotype", pseudo_factors = c("orig.ident","genotype"))
+
+#make a list of wt vs ko DEGs 
+d7_dge<-list()
+for (i in names(d7_de)) {
+  d7_dge[[i]]<-topTable(d7_de[[i]][[1]], coef="genotypeko", p=0.05, number=Inf) 
+}
+
+
+saveRDS(d7_dge, "d7_final_refilt_DEGs_pseudobulk_unified_dream_modelbygenotype_p005.RDS")
+
+#make a list of wt vs ko DEGs 
+d7_dge<-list()
+for (i in names(d7_de)) {
+  d7_dge[[i]]<-topTable(d7_de[[i]][[1]], coef="genotypeko", p=0.1, number=Inf) 
+}
+
+
+saveRDS(d7_dge, "d7_final_refilt_DEGs_pseudobulk_unified_dream_modelbygenotype_p01.RDS")
+
+#make a list of wt vs ko DEGs 
+d7_dge<-list()
+for (i in names(d7_de)) {
+  d7_dge[[i]]<-topTable(d7_de[[i]][[1]], coef="genotypeko", p=1, number=Inf) 
+}
+
+
+saveRDS(d7_dge, "d7_final_refilt_DEGs_pseudobulk_unified_dream_modelbygenotype_p1.RDS")
+
+
+d7_dge<-readRDS("d7_final_refilt_DEGs_pseudobulk_unified_dream_modelbygenotype_p005.RDS")
+d7_dge<-readRDS("d7_final_refilt_DEGs_pseudobulk_unified_dream_modelbygenotype_p01.RDS")
+d7_dge<-readRDS("d7_final_refilt_DEGs_pseudobulk_unified_dream_modelbygenotype_p1.RDS")
+
+
+#DGE analysis per cluster
+param = SnowParam(10, "SOCK", progressbar=TRUE)
+register(param) 
+model_formula= ~genotype
+                   
+d7_de_cl<-de_genes(d7, classification = "seurat_clusters", model_formula = model_formula, maineffect = "genotype", pseudo_factors = c("orig.ident","genotype"))
+
+#make a list of wt vs ko DEGs for each cluster
+d7_dge_cl<-list()
+for (i in names(d7_de_cl)) {
+  d7_dge_cl[[i]]<-topTable(d7_de_cl[[i]][[1]], coef="genotypeko", p=0.05, number=Inf) 
+}
+
+saveRDS(d7_dge_cl, "d7_final_refilt_DEGs_pseudobulk_cluster_dream_modelbygenotype_p005.RDS")
+
+
+#make a list of wt vs ko DEGs for each cluster
+d7_dge_cl<-list()
+for (i in names(d7_de_cl)) {
+  d7_dge_cl[[i]]<-topTable(d7_de_cl[[i]][[1]], coef="genotypeko", p=0.1, number=Inf) 
+}
+
+saveRDS(d7_dge_cl, "d7_final_refilt_DEGs_pseudobulk_cluster_dream_modelbygenotype_p01.RDS")
+
+
+
+#make a list of wt vs ko DEGs for each cluster
+d7_dge_cl<-list()
+for (i in names(d7_de_cl)) {
+  d7_dge_cl[[i]]<-topTable(d7_de_cl[[i]][[1]], coef="genotypeko", p=1, number=Inf) 
+}
+
+saveRDS(d7_dge_cl, "d7_final_refilt_DEGs_pseudobulk_cluster_dream_modelbygenotype_p1.RDS")
+
+
+d7_dge_cl<-readRDS("d7_final_refilt_DEGs_pseudobulk_cluster_dream_modelbygenotype_p005.RDS")
+d7_dge_cl<-readRDS("d7_final_refilt_DEGs_pseudobulk_cluster_dream_modelbygenotype_p01.RDS")
+d7_dge_cl<-readRDS("d7_final_refilt_DEGs_pseudobulk_cluster_dream_modelbygenotype_p1.RDS")
+
+
+
+#DGE analysis per celltype
+param = SnowParam(10, "SOCK", progressbar=TRUE)
+register(param) 
+model_formula= ~genotype
+d7_de_ct<-de_genes(d7, classification = "celltype", model_formula = model_formula, maineffect = "genotype", pseudo_factors = c("orig.ident","genotype"))
+
+
+#make a list of wt vs ko DEGs for each cluster
+d7_dge_ct<-list()
+for (i in names(d7_de_ct)) {
+  d7_dge_ct[[i]]<-topTable(d7_de_ct[[i]][[1]], coef="genotypeko", p=0.05, number=Inf) 
+}
+
+saveRDS(d7_dge_ct, "d7_final_refilt_DEGs_pseudobulk_celltype_dream_modelbygenotype_p005.RDS")
+
+#make a list of wt vs ko DEGs for each cluster
+d7_dge_ct<-list()
+for (i in names(d7_de_ct)) {
+  d7_dge_ct[[i]]<-topTable(d7_de_ct[[i]][[1]], coef="genotypeko", p=0.1, number=Inf) 
+}
+
+saveRDS(d7_dge_ct, "d7_final_refilt_DEGs_pseudobulk_celltype_dream_modelbygenotype_p01.RDS")
+
+
+#make a list of wt vs ko DEGs for each cluster
+d7_dge_ct<-list()
+for (i in names(d7_de_ct)) {
+  d7_dge_ct[[i]]<-topTable(d7_de_ct[[i]][[1]], coef="genotypeko", p=1, number=Inf) 
+}
+
+saveRDS(d7_dge_ct, "d7_final_refilt_DEGs_pseudobulk_celltype_dream_modelbygenotype_p1.RDS")
+
+
+d7_dge_ct<-readRDS("d7_final_refilt_DEGs_pseudobulk_celltype_dream_modelbygenotype_p01.RDS")
+d7_dge_ct<-readRDS("d7_final_refilt_DEGs_pseudobulk_celltype_dream_modelbygenotype_p01.RDS")
+d7_dge_ct<-readRDS("d7_final_refilt_DEGs_pseudobulk_celltype_dream_modelbygenotype_p1.RDS")
+
+
+#read the dream DGE objects
+setwd("~/Desktop/projects/pott/AF_TBX5KO_d7_only_final_final/d7_dream/objects")
+d7_dge<-readRDS("d7_final_refilt_DEGs_pseudobulk_unified_dream_modelbygenotype_p1.RDS")
+d7_dge_cl<-readRDS("d7_final_refilt_DEGs_pseudobulk_cluster_dream_modelbygenotype_p1.RDS")
+d7_dge_ct<-readRDS("d7_final_refilt_DEGs_pseudobulk_celltype_dream_modelbygenotype_p1.RDS")
+
+
+clusters<-sort(unique(d7$seurat_clusters))
+order=c("cardiomyocytes","fibroblasts","endothelial cells","endothelial cells II","endocardial cells","epicardial cells","smooth muscle cells","leukocytes","neurons")
+
+d7_dge_cl<-d7_dge_cl[as.character(clusters)]
+d7_dge_ct<-d7_dge_ct[order]
+
+
+#write dge results
+list<-list(d7_dge)
+cllist<-list(d7_dge_cl)
+ctlist<-list(d7_dge_ct)
+names(list)<-c("d7")
+names(cllist)<-c("d7")
+names(ctlist)<-c("d7")
+
+#write DGE results
+for ( i in 1:length(list)) {
+  write.table(list[[i]], paste0(names(list)[i],"_DEGs_pseudobulk_dream_modelby_genotype_p1.csv"), row.names = T, sep="\t")
+}
+
+#write DGE results
+for (i in 1:length(cllist)) {
+  for (j in 1:length(cllist[[i]])) {
+    write.table(names(cllist[[i]])[j], paste0(names(cllist)[i] ,"_DEGs_clusters_pseudobulk_dream_modelby_genotype_p1.csv"),   append=T, col.names = F,  row.names = F)
+    write.table(cllist[[i]][j], paste0(names(cllist)[i] ,"_DEGs_clusters_pseudobulk_dream_modelby_genotype_p1.csv"),   append=T,  sep="\t",   row.names =T)
+  }
+}
+
+#write DGE results
+for (i in 1:length(ctlist)) {
+  for (j in 1:length(ctlist[[i]])) {
+    write.table(names(ctlist[[i]])[j], paste0(names(ctlist)[i] ,"_DEGs_celltypes_pseudobulk_dream_modelby_genotype_p1.csv"),   append=T, col.names = F,  row.names = F)
+    write.table(ctlist[[i]][j], paste0(names(ctlist)[i] ,"_DEGs_celltypes_pseudobulk_dream_modelby_genotype_p1.csv"),   append=T,  sep="\t",   row.names =T)
+  }
+}
+
+
+
+#number of DEGs
+d7_nDEG<-c()
+for ( i in 1:length(list)) {
+    d7_nDEG[i]<-dim(list[[i]][[1]][list[[i]][[1]][,"adj.P.Val"] < 0.05, ])[1]
+}
+names(d7_nDEG)<-names(list)
+
+as.data.frame(d7_nDEG) -> d7_nDEG 
+colnames(d7_nDEG)<-"nDEGs"
+
+cl_d7_nDEG<-list()
+for (i in 1:length(cllist)) {
+  cl_d7_nDEG[[i]]<-vector()
+  for (j in 1:length(cllist[[i]])) {
+    cl_d7_nDEG[[i]][j]<-dim(cllist[[i]][[j]][cllist[[i]][[j]][,"adj.P.Val"] < 0.05, ])[1]
+  }
+  names(cl_d7_nDEG[[i]])<-names(cllist[[i]])
+}
+names(cl_d7_nDEG)<-names(cllist)
+
+
+cl_d7_nDEG %>% as.data.frame() -> cl_d7_nDEG 
+
+
+ct_d7_nDEG<-list()
+for (i in 1:length(ctlist)) {
+  ct_d7_nDEG[[i]]<-vector()
+  for (j in 1:length(ctlist[[i]])) {
+    ct_d7_nDEG[[i]][j]<-dim(ctlist[[i]][[j]][ctlist[[i]][[j]][,"adj.P.Val"] < 0.05, ])[1]
+  }
+  names(ct_d7_nDEG[[i]])<-names(ctlist[[i]])
+}
+names(ct_d7_nDEG)<-names(ctlist)
+
+ct_d7_nDEG %>% as.data.frame() -> ct_d7_nDEG 
+
+list<-list(d7_nDEG, cl_d7_nDEG, ct_d7_nDEG)
+write.table(list[[1]], "d7_nDEG_table_pseudobulk_dream_modelby_genotype.csv", quote=F, sep="\t")
+write.table(list[[2]], "d7_nDEG_clusters_table_pseudobulk_dream_modelby_genotype.csv", quote=F, sep="\t")
+write.table(list[[3]], "d7_nDEG_celltypes_table_pseudobulk_dream_modelby_genotype.csv", quote=F, sep="\t")
+
+
+
+
+
+#compare pseudobulk with previous bulk RNA-seq results for day 7
+bulk<-read.table("~/Desktop/projects/pott/bulk_rnaseq_data/Table_deseqResults_TBX5ko_D0-D14.csv", sep=",", header=T)
+rownames(bulk)<-bulk$gene_id
+bulk_d3<-bulk[,c("gene_id","D3.log2FoldChange","D3.padj")]
+bulk_d7<-bulk[,c("gene_id","D7.log2FoldChange","D7.padj")]
+sig_bulk_d3<-bulk_d3[as.numeric(bulk_d3[,"D3.padj"]) < 0.05,]
+sig_bulk_d7<-bulk_d7[as.numeric(bulk_d7[,"D7.padj"]) < 0.05,]
+setwd("~/Desktop/projects/pott/AF_TBX5KO_d7_only/d7_dream/objects")
+d7_dge<-readRDS("d7_final_refilt_DEGs_pseudobulk_unified_dream_modelbygenotype_p1.RDS")
+d7_dge<-d7_dge$unified
+intersect<-intersect(rownames(d7_dge),rownames(bulk_d7))
+combined<-cbind(d7_dge[intersect,c("logFC","adj.P.Val")],bulk_d7[intersect,c("D7.log2FoldChange","D7.padj")])
+rownames(combined)<-intersect
+combined<-na.omit(combined)
+colnames(combined)<-c("pseudobulk","p.pseudobulk","bulk","p.bulk")
+combined<-as.data.frame(combined)
+
+combined$label<-""
+for (i in 1:nrow(combined)) {
+  if (combined[i,"pseudobulk"] > 1 & combined[i,"bulk"] > 1) { combined[i,"label"] = rownames(combined)[i] }
+  if (combined[i,"pseudobulk"] < -1 & combined[i,"bulk"] < -1) { combined[i,"label"] = rownames(combined)[i] }
+}
+
+combined$shared<-"no"
+for (i in 1:nrow(combined)) {
+  if (combined[i,"p.pseudobulk"] < 0.05 & combined[i,"p.bulk"] < 0.05) { combined[i,"shared"]<-"yes" }
+}
+
+corr<-cor(combined[,1],combined[,2], method = "pearson")
+corr<-round(corr, digits=3)
+g<-ggplot(data=as.data.frame(combined), aes(x=pseudobulk, y=bulk, color=shared)) + geom_point(size=0.5) + theme_minimal() + geom_smooth(method = "lm", size=0.2, aes(group=1)) + xlab("pseudobulk logFC") + ylab("bulk logFC") + geom_text(x = 3, y = -5, label = paste0('r = ', corr)) + geom_text_repel(label=combined[,"label"], size=2) + scale_color_manual(values = c("gray","black")) + theme(legend.position = "none")
+ggsave("d7_dream_pseudobulk_vs_bulk_DGE_labeled_colored.pdf", plot=g, width = 8, height = 8)
+
+sig_pseudo_d7<-d7_dge[d7_dge[,"adj.P.Val"] < 0.05,]
+g<-ggVennDiagram(list(psuedobulk_DEGs=rownames(sig_pseudo_d7),  bulk_DEGs=rownames(sig_bulk_d7))) + scale_fill_distiller(palette = "Reds",   direction = 1) + coord_flip() + theme(
+    legend.position = "right",
+    plot.margin = margin(1, 1, 1, 1, "cm")  # Add extra space for the legend
+  )
+ggsave("d7_dream_pseudobulk_vs_bulk_sig_DGE_Venn.pdf", plot=g, width = 8, height = 6)
+
+
+
+
+dge_per_ct<-readRDS("~/Desktop/projects/pott/AF_TBX5KO_d7_only/d7_dream/objects/d7_final_refilt_DEGs_pseudobulk_celltype_dream_modelbygenotype_p1.RDS")
+
+g<-list()
+for (i in 1:length(names(dge_per_ct))) {
+  dge_per_ct[[i]]$gene<-rownames(dge_per_ct[[i]])
+  dge_per_ct[[i]]$DGE="NA"
+  dge_per_ct[[i]]$DGE[dge_per_ct[[i]]$logFC > 0 & dge_per_ct[[i]]$adj.P.Val  < 0.05] <- "UP"
+  dge_per_ct[[i]]$DGE[dge_per_ct[[i]]$logFC < 0 & dge_per_ct[[i]]$adj.P.Val  < 0.05] <- "DOWN"
+  dge_per_ct[[i]]$gene<-ifelse(dge_per_ct[[i]]$DGE != "NA", rownames(dge_per_ct[[i]]) ,"")
+  g[[i]]<-ggplot(data=dge_per_ct[[i]],  aes(x=logFC,   y=-log10(adj.P.Val), col=DGE, label=gene)) + geom_point(size=0.5) + scale_color_manual(values=c("navy","gray", "red")) + ggtitle(names(dge_per_ct)[i]) + theme_minimal() + geom_text_repel(point.size=0.01, size=3 ,max.overlaps = 3, segment.color = NA, force=40)
+  ggsave(paste(names(dge_per_ct)[i],"_wt_vs_ko_DEGs_volcanoplot.pdf",  sep="_") , g[[i]],   width=6,   height=6)
+}
+
+
+
+
+
+
+
+
+
+
+```
