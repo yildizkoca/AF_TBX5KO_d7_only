@@ -1,0 +1,197 @@
+---
+title: "bulk_deg_expression_in_sc_dataset.Rmd"
+output: html_document
+date: "2023-10-31"
+---
+
+```{r}
+
+library("ggvenn", lib="~/Desktop/RLibrary2")
+library("ggrepel")
+library("ggVennDiagram")
+library("ComplexHeatmap")
+
+
+#get DEGs from previous bulk analysis
+bulk<-read.table("~/Desktop/projects/pott/bulk_rnaseq_data/Table_TBX5_resultsDESeq2_Nadadur.csv", sep=",", header=T)
+rownames(bulk)<-bulk$gene_id
+bulk<-bulk[,c("gene_id","log2FoldChange","padj")]
+bulk<-na.omit(bulk)
+sig_bulk<-bulk[as.numeric(bulk[,"padj"]) < 0.05,]
+sig_bulk_down<-sig_bulk[as.numeric(sig_bulk[,"log2FoldChange"]) < -0.5,]
+sig_bulk_up<-sig_bulk[as.numeric(sig_bulk[,"log2FoldChange"]) > 0.5,]
+
+#read sc pseudobulk counts
+all_pb_ct<-readRDS("~/Desktop/projects/pott/AF_TBX5KO_d7_only_final_final/d7_dream/objects/d7_final_refilt_pseudobulk_counts_by_celltype.RDS")
+
+d<-DGEList(counts=all_pb_ct)
+d<-calcNormFactors(d)
+nc<-cpm(d,normalized.lib.sizes=TRUE)
+nc<-log2(nc+1)
+nc<-nc[rowSums(nc) > 0, ]
+
+
+metadata<-data.frame(ct_sample=colnames(all_pb_ct))
+metadata$celltype<-sub("_.*","",metadata$ct_sample)
+metadata$sample<-sub(".*_","",metadata$ct_sample)
+metadata$day<-substr(metadata$sample,1,2)
+metadata$genotype<-substr(metadata$sample,3,4)
+
+wt_samples<-metadata[metadata[,"genotype"] %in% "wt","ct_sample"]
+ko_samples<-metadata[metadata[,"genotype"] %in% "ko","ct_sample"]
+nc_wt<-nc[,wt_samples]
+nc_ko<-nc[,ko_samples]
+nc_wt<-nc_wt[rowSums(nc_wt) > 0, ]
+nc_ko<-nc_ko[rowSums(nc_ko) > 0, ]
+
+
+intersect<-intersect(rownames(sig_bulk_down),rownames(nc))
+nc_sig_bulk_down<-nc[intersect,]
+
+intersect<-intersect(rownames(sig_bulk_down),rownames(nc_wt))
+nc_wt_sig_bulk_down<-nc_wt[intersect,]
+
+intersect<-intersect(rownames(sig_bulk_down),rownames(nc_ko))
+nc_ko_sig_bulk_down<-nc_ko[intersect,]
+
+intersect<-intersect(rownames(sig_bulk_up),rownames(nc))
+nc_sig_bulk_up<-nc[intersect,]
+
+intersect<-intersect(rownames(sig_bulk_up),rownames(nc_wt))
+nc_wt_sig_bulk_up<-nc_wt[intersect,]
+
+intersect<-intersect(rownames(sig_bulk_up),rownames(nc_ko))
+nc_ko_sig_bulk_up<-nc_ko[intersect,]
+
+
+#plot bulk degs for pseudobulk wt and ko
+split_column1<-metadata$celltype
+split_column2<-metadata$genotype
+col_column1<-getPalette(9)
+names(col_column1)<-unique(metadata$celltype)
+
+col_column2<-c("wt"="gray","ko" = "black")
+order=c("cardiomyocytes","fibroblasts","endothelial cells","endothelial cells II","endocardial cells","epicardial cells","smooth muscle cells","leukocytes","neurons")
+order2<-c("wt","ko")
+
+pdf("bulk_degs_down_in_pseudobulk_wt_and_ko_unclustered.pdf", width=10, height=8)
+Heatmap(t(scale(t(nc_sig_bulk_down))), top_annotation = HeatmapAnnotation(foo=split_column1, foo2=split_column2, col = list(foo=col_column1, foo2=col_column2), show_annotation_name = FALSE, annotation_legend_param = list(foo=list(title="", at=order),foo2=list(title="", at=order2))), show_column_names = FALSE, show_row_names = FALSE,  heatmap_legend_param = list(title="log2(cpm+1)"), cluster_columns = F)
+dev.off()
+
+pdf("bulk_degs_up_in_pseudobulk_wt_and_ko_unclustered.pdf", width=10, height=8)
+Heatmap(t(scale(t(nc_sig_bulk_up))), top_annotation = HeatmapAnnotation(foo=split_column1, foo2=split_column2, col = list(foo=col_column1, foo2=col_column2), show_annotation_name = FALSE, annotation_legend_param = list(foo=list(title="", at=order),foo2=list(title="", at=order2))), show_column_names = FALSE, show_row_names = FALSE,  heatmap_legend_param = list(title="log2(cpm+1)"), cluster_columns = F)
+dev.off()
+
+
+#plot bulk degs for pseudobulk wt
+metadata_wt<-metadata[metadata[,"genotype"] %in% "wt",]
+
+split_column1<-metadata_wt$celltype
+col_column1<-getPalette(9)
+names(col_column1)<-unique(metadata$celltype)
+
+order=c("cardiomyocytes","fibroblasts","endothelial cells","endothelial cells II","endocardial cells","epicardial cells","smooth muscle cells","leukocytes","neurons")
+
+pdf("bulk_degs_down_in_pseudobulk_wt_unclustered.pdf", width=10, height=8)
+Heatmap(t(scale(t(nc_wt_sig_bulk_down))), top_annotation = HeatmapAnnotation(foo=split_column1, col = list(foo=col_column1), show_annotation_name = FALSE, annotation_legend_param = list(foo=list(title="", at=order))), show_column_names = FALSE, show_row_names = FALSE,  heatmap_legend_param = list(title="log2(cpm+1)"), cluster_columns = F)
+dev.off()
+
+pdf("bulk_degs_up_in_pseudobulk_wt_unclustered.pdf", width=10, height=8)
+Heatmap(t(scale(t(nc_wt_sig_bulk_up))), top_annotation = HeatmapAnnotation(foo=split_column1, col = list(foo=col_column1), show_annotation_name = FALSE, annotation_legend_param = list(foo=list(title="", at=order))), show_column_names = FALSE, show_row_names = FALSE,  heatmap_legend_param = list(title="log2(cpm+1)"), cluster_columns = F)
+dev.off()
+
+#plot bulk degs for pseudobulk ko
+metadata_ko<-metadata[metadata[,"genotype"] %in% "ko",]
+
+split_column1<-metadata_ko$celltype
+col_column1<-getPalette(9)
+names(col_column1)<-unique(metadata$celltype)
+
+order=c("cardiomyocytes","fibroblasts","endothelial cells","endothelial cells II","endocardial cells","epicardial cells","smooth muscle cells","leukocytes","neurons")
+
+pdf("bulk_degs_down_in_pseudobulk_ko_unclustered.pdf", width=10, height=8)
+Heatmap(t(scale(t(nc_ko_sig_bulk_down))), top_annotation = HeatmapAnnotation(foo=split_column1, col = list(foo=col_column1), show_annotation_name = FALSE, annotation_legend_param = list(foo=list(title="", at=order))), show_column_names = FALSE, show_row_names = FALSE,  heatmap_legend_param = list(title="log2(cpm+1)"), cluster_columns = F)
+dev.off()
+
+pdf("bulk_degs_up_in_pseudobulk_ko_unclustered.pdf", width=10, height=8)
+Heatmap(t(scale(t(nc_ko_sig_bulk_up))), top_annotation = HeatmapAnnotation(foo=split_column1, col = list(foo=col_column1), show_annotation_name = FALSE, annotation_legend_param = list(foo=list(title="", at=order))), show_column_names = FALSE, show_row_names = FALSE,  heatmap_legend_param = list(title="log2(cpm+1)"), cluster_columns = F)
+dev.off()
+
+
+
+
+#compare pseudobulk with previous bulk RNA-seq results for day 7
+bulk<-read.table("~/Desktop/projects/pott/bulk_rnaseq_data/Table_TBX5_resultsDESeq2_Nadadur.csv", sep=",", header=T)
+rownames(bulk)<-bulk$gene_id
+bulk<-bulk[,c("gene_id","log2FoldChange","padj")]
+bulk<-na.omit(bulk)
+sig_bulk<-bulk[as.numeric(bulk[,"padj"]) < 0.05,]
+d7_dge<-readRDS("~/Desktop/projects/pott/AF_TBX5KO_d7_only_final_final/d7_dream/objects/d7_final_refilt_DEGs_pseudobulk_unified_dream_modelbygenotype_p1.RDS")
+d7_dge<-d7_dge$unified
+intersect<-intersect(rownames(d7_dge),rownames(bulk))
+combined<-cbind(d7_dge[intersect,c("logFC","adj.P.Val")],bulk[intersect,c("log2FoldChange","padj")])
+rownames(combined)<-intersect
+combined<-na.omit(combined)
+colnames(combined)<-c("pseudobulk","p.pseudobulk","bulk","p.bulk")
+combined<-as.data.frame(combined)
+
+combined$shared<-"no"
+for (i in 1:nrow(combined)) {
+  if (combined[i,"p.pseudobulk"] < 0.05 & combined[i,"p.bulk"] < 0.05) { combined[i,"shared"]<-"yes" }
+}
+
+combined$label<-""
+for (i in 1:nrow(combined)) {
+  if (combined[i,"pseudobulk"] > 1 & combined[i,"bulk"] > 1 & combined[i,"shared"]=="yes") { combined[i,"label"] = rownames(combined)[i] }
+  if (combined[i,"pseudobulk"] < -1 & combined[i,"bulk"] < -1 & combined[i,"shared"]=="yes") { combined[i,"label"] = rownames(combined)[i]  }
+}
+
+
+combined_unshared<-combined[combined$shared == "no",]
+corr1<-cor(combined_unshared[,"pseudobulk"],combined_unshared[,"bulk"], method = "pearson")
+corr1<-round(corr1, digits=3)
+combined_shared<-combined[combined$shared == "yes",]
+corr2<-cor(combined_shared[,"pseudobulk"],combined_shared[,"bulk"], method = "pearson")
+corr2<-round(corr2, digits=3)
+g<-ggplot(data=as.data.frame(combined), aes(x=pseudobulk, y=bulk, color=shared)) + geom_point(size=0.5) + theme_minimal() + geom_smooth(method = "lm", size=0.2, aes(group=1)) + xlab("pseudobulk logFC") + ylab("bulk logFC") + geom_text(x = 3, y = -3, label = paste0('r = ', corr1, ' r = ', corr2)) + geom_text_repel(label=combined[,"label"], size=2) + scale_color_manual(values = c("gray","black")) + theme(legend.position = "none")
+g<-ggplot(data=as.data.frame(combined), aes(x=pseudobulk, y=bulk, color=shared)) + geom_point(size=0.5) + theme_minimal() + geom_smooth(method = "lm", size=0.2) + xlab("pseudobulk logFC") + ylab("bulk logFC") + geom_text_repel(label=combined[,"label"], size=2) + scale_color_manual(values = c("gray","black")) + theme(legend.position = "none") + annotate("text", x = 3, y = -2.75, label = paste0('r = ', corr1) , color = "gray", size = 5) + annotate("text", x = 3, y = -3, label = paste0('r = ', corr2) , color = "black", size = 5) 
+ggsave("d7_dream_pseudobulk_vs_bulk_DGE_labeled_colored.pdf", plot=g, width = 8, height = 8)
+
+
+
+sig_pseudo_d7<-d7_dge[d7_dge[,"adj.P.Val"] < 0.05,]
+sig_pseudo_d7_up<-sig_pseudo_d7[sig_pseudo_d7[,"logFC"] > 0,]
+sig_pseudo_d7_down<-sig_pseudo_d7[sig_pseudo_d7[,"logFC"] < 0,]
+sig_bulk<-bulk[as.numeric(bulk[,"padj"]) < 0.05,]
+sig_bulk_up<-sig_bulk[as.numeric(sig_bulk[,"log2FoldChange"]) > 0,]
+sig_bulk_down<-sig_bulk[as.numeric(sig_bulk[,"log2FoldChange"]) < 0,]
+
+
+library("ggvenn", lib="~/Desktop/RLibrary2")
+g_up<-ggvenn(
+list(psuedobulk_DEGs=rownames(sig_pseudo_d7_up),  bulk_DEGs=rownames(sig_bulk_up)) , 
+stroke_size = 0,
+set_name_size = 10,
+text_size = 10,
+show_percentage = F,
+auto_scale = F
+) 
+ggsave("d7_dream_pseudobulk_vs_bulk_sig_up_DGE_Venn.pdf", plot=g_up, width = 8, height = 8)
+
+g_down<-ggvenn(
+list(psuedobulk_DEGs=rownames(sig_pseudo_d7_down),  bulk_DEGs=rownames(sig_bulk_down)) , 
+stroke_size = 0,
+set_name_size = 10,
+text_size = 10,
+show_percentage = F,
+auto_scale = F
+)
+ggsave("d7_dream_pseudobulk_vs_bulk_sig_down_DGE_Venn.pdf", plot=g_down, width = 8, height = 8)
+
+
+
+
+
+
+```
+
